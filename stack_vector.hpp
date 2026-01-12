@@ -1,21 +1,10 @@
+#include "memory.hpp"
 #include <cstddef>
-#include <cstdint>
 #include <memory>
 
-template <class T> class DefaultAllocator {
-  using value_type = T;
+namespace edenlib {
 
-public:
-  constexpr DefaultAllocator() noexcept {}
-  constexpr DefaultAllocator(const DefaultAllocator &other) noexcept {}
-  constexpr ~DefaultAllocator() {}
-
-  constexpr T *allocate(std::size_t n) { return operator new(n * sizeof(T)); }
-  constexpr void deallocate(T *p, std::size_t n) { operator delete(p, n); }
-};
-
-template <class T, std::size_t StackBufferSize,
-          class Allocator = DefaultAllocator<T>>
+template <class T, std::size_t StackBufferSize, class Allocator = allocator<T>>
 class StackVector {
   using size_type = std::size_t;
   using difference_type = std::ptrdiff_t;
@@ -144,3 +133,5 @@ public:
   constexpr void resize(size_type count);
   /* Modifiers */
 };
+
+} // namespace edenlib

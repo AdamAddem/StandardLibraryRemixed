@@ -3,6 +3,7 @@
 #include <stdexcept>
 #include <string>
 
+namespace edenlib {
 template <size_t N> struct Bitset;
 
 template <size_t N>
@@ -35,6 +36,10 @@ constexpr Bitset<N> operator^(const Bitset<N> &lhs,
   return ret_set;
 }
 
+/* To Do:
+ *  Add bitshift functionality
+ *  Add bit-reference
+ */
 template <size_t N> struct Bitset {
   static constexpr size_t szULL = sizeof(unsigned long long);
   static constexpr size_t num_longs = (N - 1) / szULL + 1;
@@ -176,3 +181,5 @@ template <size_t N> struct Bitset {
       bits[i] = other.bits[num_longs];
   }
 };
+
+} // namespace edenlib
