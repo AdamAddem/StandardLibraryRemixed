@@ -9,7 +9,9 @@ public:
   constexpr allocator(const allocator &other) noexcept {}
   constexpr ~allocator() {}
 
-  constexpr T *allocate(std::size_t n) { return operator new(n * sizeof(T)); }
+  constexpr T *allocate(std::size_t n) {
+    return static_cast<T *>(operator new(n * sizeof(T)));
+  }
   constexpr void deallocate(T *p, std::size_t n) { operator delete(p, n); }
 };
 

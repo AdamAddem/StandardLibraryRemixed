@@ -1,9 +1,16 @@
 #include "memory.hpp"
 #include <cstddef>
+#include <iostream>
 #include <memory>
 
 namespace edenlib {
 
+/* To Do:
+ *
+ *  Ensure CV/Correctness
+ *  Examine possible UB with reinterpret_cast
+ *
+ */
 template <class T, std::size_t StackBufferSize, class Allocator = allocator<T>>
 class StackVector {
   using size_type = std::size_t;
@@ -16,18 +23,68 @@ class StackVector {
   T *m_begin_heap{nullptr};
   T *m_heap_capacity_end{nullptr};
 
-public:
-  /* Special Member Functions */
-  explicit constexpr StackVector() noexcept(noexcept(Allocator()))
-      : StackVector(Allocator()) {}
+  constexpr void destroy_heap() {
+    if (m_begin_heap) {
+      for (size_type i{}; i < m_end - StackBufferSize; ++i)
+        std::destroy_at(&m_begin_heap[i]);
+    }
+  }
 
-  explicit constexpr StackVector(const Allocator &alloc) : m_alloc(alloc) {}
-  explicit StackVector(size_type count, const Allocator &alloc = Allocator())
-      : m_alloc(alloc) {
+  constexpr void destroy_stack() {
+    const size_type num_on_stack = std::min(m_end, StackBufferSize);
+
+    for (size_type i{}; i < num_on_stack; ++i)
+      std::destroy_at(&m_stack_buffer[i]);
+  }
+
+  constexpr void construct_stack_move(size_type count, std::byte *other_stack) {
+    const size_type num_on_stack = std::min(count, StackBufferSize);
+    for (; m_end < num_on_stack; ++m_end)
+      std::construct_at(&m_stack_buffer[m_end * value_size],
+                        std::move_if_noexcept(other_stack[m_end * value_size]));
+  }
+
+  constexpr void construct_buffers_copy(size_type count, std::byte *other_stack,
+                                        T *other_heap) {
     const size_type overflow =
         count > StackBufferSize ? count - StackBufferSize : 0;
-    const size_type num_on_stack =
-        count > StackBufferSize ? StackBufferSize : count;
+    const size_type num_on_stack = std::min(count, StackBufferSize);
+    for (; m_end < num_on_stack; ++m_end)
+      std::construct_at(&m_stack_buffer[m_end * value_size],
+                        other_stack[m_end * value_size]);
+
+    if (overflow) {
+      m_begin_heap = m_alloc.allocate(overflow);
+      for (size_type i{}; i < overflow; ++i) {
+        std::construct_at(&m_begin_heap[i], other_heap[i]);
+        ++m_end;
+      }
+      m_heap_capacity_end = m_begin_heap + overflow;
+    }
+  }
+
+  constexpr void construct_buffers(size_type count, const T &value) {
+    const size_type overflow =
+        count > StackBufferSize ? count - StackBufferSize : 0;
+    const size_type num_on_stack = std::min(count, StackBufferSize);
+    for (; m_end < num_on_stack; ++m_end)
+      std::construct_at(
+          reinterpret_cast<T *>(&m_stack_buffer[m_end * value_size]), value);
+
+    if (overflow) {
+      m_begin_heap = m_alloc.allocate(overflow);
+      for (size_type i{}; i < overflow; ++i) {
+        std::construct_at(&m_begin_heap[i], value);
+        ++m_end;
+      }
+      m_heap_capacity_end = m_begin_heap + overflow;
+    }
+  }
+
+  constexpr void construct_buffers(size_type count) {
+    const size_type overflow =
+        count > StackBufferSize ? count - StackBufferSize : 0;
+    const size_type num_on_stack = std::min(count, StackBufferSize);
     for (; m_end < num_on_stack; ++m_end)
       std::construct_at(&m_stack_buffer[m_end * value_size]);
 
@@ -40,93 +97,148 @@ public:
       m_heap_capacity_end = m_begin_heap + overflow;
     }
   }
+
+public:
+  /* Special Member Functions */
+  explicit constexpr StackVector() noexcept(noexcept(Allocator()))
+      : StackVector(Allocator()) {}
+
+  explicit constexpr StackVector(const Allocator &alloc) : m_alloc(alloc) {}
+  explicit StackVector(size_type count, const Allocator &alloc = Allocator())
+      : m_alloc(alloc) {
+    construct_buffers(count);
+  }
+
   constexpr StackVector(size_type count, const T &value,
                         const Allocator &alloc = Allocator()) {
-    const size_type overflow =
-        count > StackBufferSize ? count - StackBufferSize : 0;
-    const size_type num_on_stack =
-        count > StackBufferSize ? StackBufferSize : count;
-    for (; m_end < num_on_stack; ++m_end)
-      std::construct_at(&m_stack_buffer[m_end * value_size], value);
-
-    if (overflow) {
-      m_begin_heap = m_alloc.allocate(overflow);
-      for (size_type i{}; i < overflow; ++i) {
-        std::construct_at(&m_begin_heap[i], value);
-        ++m_end;
-      }
-      m_heap_capacity_end = m_begin_heap + overflow;
-    }
+    construct_buffers(count, value);
   }
   StackVector(std::initializer_list<T> init,
               const Allocator &alloc = Allocator());
 
   constexpr StackVector(const StackVector &other) : m_alloc(other.m_alloc) {
-    const size_type overflow =
-        other.m_end > StackBufferSize ? other.m_end - StackBufferSize : 0;
-    const size_type num_on_stack = std::min(other.m_end, StackBufferSize);
-
-    for (size_type i{}; i < num_on_stack; ++i)
-      std::construct_at(&m_stack_buffer[i], other.m_stack_buffer[i]);
-
-    if (overflow) {
-      m_begin_heap = m_alloc(overflow);
-      for (size_type i{}; i < overflow; ++i) {
-        std::construct_at(&m_begin_heap[i], other.m_begin_heap[i]);
-        ++m_end;
-      }
-      m_heap_capacity_end = m_begin_heap + overflow;
-    }
-  };
+    construct_buffers_copy(other.m_end + 1, other.m_stack_buffer,
+                           other.m_begin_heap);
+  }
 
   constexpr StackVector(StackVector &&other) noexcept
-      : m_alloc(std::move(other.m_alloc)), m_end(other.m_end),
+      : m_alloc(std::move_if_noexcept(other.m_alloc)), m_end(other.m_end),
         m_begin_heap(other.m_begin_heap),
         m_heap_capacity_end(other.m_heap_capacity_end) {
-    const size_type num_on_stack = std::min(other.m_end, StackBufferSize);
-
-    for (size_type i{}; i < num_on_stack; ++i)
-      std::construct_at(&m_stack_buffer[i],
-                        std::move_if_noexcept(other.m_stack_buffer[i]));
+    construct_stack_move(other.m_end + 1, other.m_stack_buffer);
 
     other.m_begin_heap = nullptr;
     other.m_heap_capacity_end = nullptr;
   }
 
-  constexpr ~StackVector();
+  constexpr ~StackVector() noexcept(noexcept(std::declval<T>().~T())) {
+    destroy_stack();
+    destroy_heap();
+  }
 
-  constexpr StackVector &operator=(const StackVector &other);
-  constexpr StackVector &operator=(StackVector &&other) noexcept;
+  constexpr StackVector &operator=(const StackVector &other) {
+    destroy_stack();
+    destroy_heap();
+    m_alloc = other.m_alloc;
+
+    construct_buffers_copy(other.m_end + 1, other.m_stack_buffer,
+                           other.m_begin_heap);
+    return *this;
+  }
+
+  constexpr StackVector &operator=(StackVector &&other) noexcept {
+    destroy_stack();
+    destroy_heap();
+    m_alloc = std::move_if_noexcept(other.m_alloc);
+
+    construct_stack_move(other.m_end + 1, other.m_stack_buffer);
+    m_begin_heap = other.m_begin_heap;
+    m_heap_capacity_end = other.m_heap_capacity_end;
+    m_end = other.m_end;
+    other.m_begin_heap = nullptr;
+    other.m_heap_capacity_end = nullptr;
+
+    return *this;
+  }
+
   constexpr StackVector &operator=(std::initializer_list<T> ilist) noexcept;
   /* Special Member Functions */
 
   /* Element Access */
-  constexpr T &at(size_type pos);
-  constexpr const T &at(size_type pos) const;
-  constexpr T &operator[](size_type pos);
-  constexpr const T &operator[](size_type pos) const;
+  constexpr T &at(size_type pos) {
+    if (pos > m_end)
+      throw std::runtime_error("element access beyond bounds in stackvector");
 
-  constexpr T &front();
-  constexpr const T &front() const;
+    return pos < StackBufferSize
+               ? reinterpret_cast<T &>(m_stack_buffer[pos * value_size])
+               : m_begin_heap[pos - StackBufferSize];
+  }
 
-  constexpr T &back();
-  constexpr const T &back() const;
+  constexpr const T &at(size_type pos) const {
+    if (pos > m_end)
+      throw std::runtime_error("element access beyond bounds in stackvector");
 
-  constexpr T *stack_data() noexcept;
-  constexpr T *heap_data() noexcept;
-  constexpr const T *stack_data() const noexcept;
-  constexpr const T *heap_data() const noexcept;
+    return pos < StackBufferSize
+               ? reinterpret_cast<T &>(m_stack_buffer[pos * value_size])
+               : m_begin_heap[pos - StackBufferSize];
+  }
+
+  constexpr T &operator[](size_type pos) {
+    return pos < StackBufferSize
+               ? reinterpret_cast<T &>(m_stack_buffer[pos * value_size])
+               : m_begin_heap[pos - StackBufferSize];
+  }
+
+  constexpr const T &operator[](size_type pos) const {
+    return pos < StackBufferSize
+               ? reinterpret_cast<T &>(m_stack_buffer[pos * value_size])
+               : m_begin_heap[pos - StackBufferSize];
+  }
+
+  constexpr T &front() { return reinterpret_cast<T &>(m_stack_buffer[0]); }
+
+  constexpr const T &front() const {
+    return reinterpret_cast<T &>(m_stack_buffer[0]);
+  }
+
+  constexpr T &back() {
+    if (m_end <= StackBufferSize)
+      return reinterpret_cast<T &>(m_stack_buffer[(m_end - 1) * value_size]);
+
+    return reinterpret_cast<T &>(m_begin_heap[(m_end - 1) - StackBufferSize]);
+  }
+  constexpr const T &back() const {
+    if (m_end <= StackBufferSize)
+      return reinterpret_cast<T &>(m_stack_buffer[(m_end - 1) * value_size]);
+
+    return reinterpret_cast<T &>(m_begin_heap[(m_end - 1) - StackBufferSize]);
+  }
+
+  constexpr T *stack_data() noexcept {
+    return reinterpret_cast<T *>(m_stack_buffer);
+  }
+
+  constexpr T *heap_data() noexcept { return m_begin_heap; }
+
+  constexpr const T *stack_data() const noexcept {
+    return reinterpret_cast<const T *>(m_stack_buffer);
+  }
+  constexpr const T *heap_data() const noexcept {
+    return reinterpret_cast<const T *>(m_begin_heap);
+  }
   /* Element Access */
 
   /* Capacity */
-  constexpr bool is_empty() const noexcept;
-  constexpr size_type size() const noexcept;
-  constexpr void reserve(size_type new_cap);
+  constexpr bool is_empty() const noexcept { return m_end == 0; }
+  constexpr size_type size() const noexcept { return m_end; }
   constexpr size_type capacity() const noexcept;
   /* Capacity */
 
   /* Modifiers */
-  constexpr void clear() noexcept;
+  constexpr void clear() noexcept {
+    destroy_stack();
+    destroy_heap();
+  }
   constexpr void push_back(const T &value);
   constexpr void push_back(T &&value);
   constexpr void pop_back();

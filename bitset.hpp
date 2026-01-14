@@ -10,7 +10,7 @@ template <size_t N>
 constexpr Bitset<N> operator&(const Bitset<N> &lhs,
                               const Bitset<N> &rhs) noexcept {
   Bitset<N> ret_set;
-  for (auto i{0uz}; i < Bitset<N>::num_longs; ++i)
+  for (auto i{0uz}; i < Bitset<N>::num_data; ++i)
     ret_set.bits[i] = lhs.bits[i] & rhs.bits[i];
 
   return ret_set;
@@ -20,7 +20,7 @@ template <size_t N>
 constexpr Bitset<N> operator|(const Bitset<N> &lhs,
                               const Bitset<N> &rhs) noexcept {
   Bitset<N> ret_set;
-  for (auto i{0uz}; i < Bitset<N>::num_longs; ++i)
+  for (auto i{0uz}; i < Bitset<N>::num_data; ++i)
     ret_set.bits[i] = lhs.bits[i] | rhs.bits[i];
 
   return ret_set;
@@ -30,7 +30,7 @@ template <size_t N>
 constexpr Bitset<N> operator^(const Bitset<N> &lhs,
                               const Bitset<N> &rhs) noexcept {
   Bitset<N> ret_set;
-  for (auto i{0uz}; i < Bitset<N>::num_longs; ++i)
+  for (auto i{0uz}; i < Bitset<N>::num_data; ++i)
     ret_set.bits[i] = lhs.bits[i] ^ rhs.bits[i];
 
   return ret_set;
@@ -41,21 +41,27 @@ constexpr Bitset<N> operator^(const Bitset<N> &lhs,
  *  Add bit-reference
  */
 template <size_t N> struct Bitset {
-  static constexpr size_t szULL = sizeof(unsigned long long);
-  static constexpr size_t num_longs = (N - 1) / szULL + 1;
-  static constexpr size_t indexOf(size_t pos) noexcept { return pos / szULL; }
+
+  using data_type = unsigned long long;
+
+  static constexpr size_t sizeofType = sizeof(data_type);
+  static constexpr size_t num_data = (N - 1) / sizeofType + 1;
+  static constexpr data_type maxofType = std::numeric_limits<data_type>::max();
+  static constexpr size_t indexOf(size_t pos) noexcept {
+    return pos / sizeofType;
+  }
   static constexpr size_t size() noexcept { return N; }
 
-  static constexpr unsigned long long maskFor(size_t pos) noexcept {
-    return 1ull << (pos % szULL);
+  static constexpr data_type maskFor(size_t pos) noexcept {
+    return 1ull << (pos % sizeofType);
   }
 
   constexpr bool operator[](size_t pos) const { return test(pos); }
 
-  unsigned long long bits[num_longs];
+  data_type bits[num_data];
 
   constexpr bool test(size_t pos) const {
-    if (indexOf(pos) > (num_longs - 1))
+    if (indexOf(pos) > (num_data - 1))
       throw std::runtime_error("Invalid pos for bitset");
 
     return bits[indexOf(pos)] & maskFor(pos);
@@ -122,7 +128,7 @@ template <size_t N> struct Bitset {
 
   constexpr Bitset &set() {
     for (auto &num : bits)
-      num = std::numeric_limits<unsigned long long>::max();
+      num = maxofType;
 
     return *this;
   }
@@ -136,14 +142,14 @@ template <size_t N> struct Bitset {
     return *this;
   }
 
-  constexpr Bitset &flip() {
+  constexpr Bitset &flip() noexcept {
     for (auto i{0uz}; i < N; ++i)
       set(i, !test(i));
 
     return *this;
   }
 
-  constexpr Bitset &flip(size_t pos) noexcept {
+  constexpr Bitset &flip(size_t pos) {
     set(pos, !test(pos));
     return *this;
   }
@@ -177,8 +183,8 @@ template <size_t N> struct Bitset {
   }
 
   constexpr Bitset(const Bitset &other) {
-    for (auto i{0uz}; i < num_longs; ++i)
-      bits[i] = other.bits[num_longs];
+    for (auto i{0uz}; i < num_data; ++i)
+      bits[i] = other.bits[num_data];
   }
 };
 
