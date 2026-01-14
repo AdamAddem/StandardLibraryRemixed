@@ -2,20 +2,21 @@
 #include <cstddef>
 #include <iostream>
 #include <memory>
-
+#include <utility>
 namespace edenlib {
 
 /* To Do:
  *
- *  Ensure CV/Correctness
- *  Examine possible UB with reinterpret_cast
- *
+ * Ensure CV/Correctness
+ * Examine possible UB with reinterpret_cast
+ * Implement iterators
  */
 template <class T, std::size_t StackBufferSize, class Allocator = allocator<T>>
 class StackVector {
   using size_type = std::size_t;
   using difference_type = std::ptrdiff_t;
   static constexpr size_t value_size = sizeof(T);
+  static constexpr size_t expansion_mod = 2;
 
   [[no_unique_address]] Allocator m_alloc;
   size_type m_end{0};
@@ -28,6 +29,10 @@ class StackVector {
       for (size_type i{}; i < m_end - StackBufferSize; ++i)
         std::destroy_at(&m_begin_heap[i]);
     }
+
+    m_alloc.deallocate(m_begin_heap, m_heap_capacity_end - m_begin_heap);
+    m_begin_heap = nullptr;
+    m_heap_capacity_end = nullptr;
   }
 
   constexpr void destroy_stack() {
@@ -96,6 +101,24 @@ class StackVector {
       }
       m_heap_capacity_end = m_begin_heap + overflow;
     }
+  }
+
+  constexpr void expand() {
+
+    const size_type old_size =
+        m_begin_heap ? m_heap_capacity_end - m_begin_heap : 1;
+
+    T *const new_begin = m_alloc.allocate(old_size * expansion_mod);
+    T *const new_heap_end = new_begin + old_size * expansion_mod;
+
+    if (old_size != 1)
+      for (size_type i{}; i < old_size; ++i)
+        std::construct_at(new_begin + i,
+                          std::move_if_noexcept(m_begin_heap[i]));
+
+    destroy_heap();
+    m_begin_heap = new_begin;
+    m_heap_capacity_end = new_heap_end;
   }
 
 public:
@@ -169,69 +192,73 @@ public:
     if (pos > m_end)
       throw std::runtime_error("element access beyond bounds in stackvector");
 
-    return pos < StackBufferSize
-               ? reinterpret_cast<T &>(m_stack_buffer[pos * value_size])
-               : m_begin_heap[pos - StackBufferSize];
+    return *this[pos];
   }
 
   constexpr const T &at(size_type pos) const {
     if (pos > m_end)
       throw std::runtime_error("element access beyond bounds in stackvector");
 
-    return pos < StackBufferSize
-               ? reinterpret_cast<T &>(m_stack_buffer[pos * value_size])
-               : m_begin_heap[pos - StackBufferSize];
+    return *this[pos];
   }
 
   constexpr T &operator[](size_type pos) {
-    return pos < StackBufferSize
-               ? reinterpret_cast<T &>(m_stack_buffer[pos * value_size])
-               : m_begin_heap[pos - StackBufferSize];
+    return pos < StackBufferSize ? *std::launder(reinterpret_cast<T *>(
+                                       &m_stack_buffer[pos * value_size]))
+                                 : m_begin_heap[pos - StackBufferSize];
   }
 
   constexpr const T &operator[](size_type pos) const {
-    return pos < StackBufferSize
-               ? reinterpret_cast<T &>(m_stack_buffer[pos * value_size])
-               : m_begin_heap[pos - StackBufferSize];
+    return pos < StackBufferSize ? *std::launder(reinterpret_cast<T *>(
+                                       &m_stack_buffer[pos * value_size]))
+                                 : m_begin_heap[pos - StackBufferSize];
   }
 
-  constexpr T &front() { return reinterpret_cast<T &>(m_stack_buffer[0]); }
+  constexpr T &front() {
+    return *std::launder(reinterpret_cast<T *>(m_stack_buffer));
+  }
 
   constexpr const T &front() const {
-    return reinterpret_cast<T &>(m_stack_buffer[0]);
+    return *std::launder(reinterpret_cast<T *>(m_stack_buffer));
   }
 
   constexpr T &back() {
     if (m_end <= StackBufferSize)
-      return reinterpret_cast<T &>(m_stack_buffer[(m_end - 1) * value_size]);
+      return *std::launder(
+          reinterpret_cast<T *>(&m_stack_buffer[(m_end - 1) * value_size]));
 
-    return reinterpret_cast<T &>(m_begin_heap[(m_end - 1) - StackBufferSize]);
+    return m_begin_heap[(m_end - 1) - StackBufferSize];
   }
+
   constexpr const T &back() const {
     if (m_end <= StackBufferSize)
-      return reinterpret_cast<T &>(m_stack_buffer[(m_end - 1) * value_size]);
+      return *std::launder(
+          reinterpret_cast<T *>(&m_stack_buffer[(m_end - 1) * value_size]));
 
-    return reinterpret_cast<T &>(m_begin_heap[(m_end - 1) - StackBufferSize]);
+    return m_begin_heap[(m_end - 1) - StackBufferSize];
   }
 
   constexpr T *stack_data() noexcept {
-    return reinterpret_cast<T *>(m_stack_buffer);
+    return std::launder(reinterpret_cast<T *>(m_stack_buffer));
+  }
+
+  constexpr const T *stack_data() const noexcept {
+    return std::launder(reinterpret_cast<const T *>(m_stack_buffer));
   }
 
   constexpr T *heap_data() noexcept { return m_begin_heap; }
-
-  constexpr const T *stack_data() const noexcept {
-    return reinterpret_cast<const T *>(m_stack_buffer);
-  }
-  constexpr const T *heap_data() const noexcept {
-    return reinterpret_cast<const T *>(m_begin_heap);
-  }
+  constexpr const T *heap_data() const noexcept { return m_begin_heap; }
   /* Element Access */
 
   /* Capacity */
   constexpr bool is_empty() const noexcept { return m_end == 0; }
   constexpr size_type size() const noexcept { return m_end; }
-  constexpr size_type capacity() const noexcept;
+  constexpr size_type capacity() const noexcept {
+    if (m_end <= StackBufferSize)
+      return StackBufferSize;
+
+    return StackBufferSize + (m_heap_capacity_end - m_begin_heap);
+  }
   /* Capacity */
 
   /* Modifiers */
@@ -239,10 +266,103 @@ public:
     destroy_stack();
     destroy_heap();
   }
-  constexpr void push_back(const T &value);
-  constexpr void push_back(T &&value);
-  constexpr void pop_back();
+
+  constexpr void push_back(const T &value) {
+    if (m_end < StackBufferSize) {
+      std::construct_at(std::launder(reinterpret_cast<T *>(
+                            &m_stack_buffer[m_end * value_size])),
+                        value);
+      ++m_end;
+      return;
+    }
+
+    const size_type heap_end_index = m_end - StackBufferSize;
+    if (m_begin_heap + heap_end_index == m_heap_capacity_end ||
+        m_heap_capacity_end == nullptr)
+      expand();
+
+    std::construct_at(m_begin_heap + heap_end_index, value);
+    ++m_end;
+  }
+
+  constexpr void push_back(T &&value) {
+    if (m_end < StackBufferSize) {
+      std::construct_at(std::launder(reinterpret_cast<T *>(
+                            &m_stack_buffer[m_end * value_size])),
+                        std::move_if_noexcept(value));
+      ++m_end;
+      return;
+    }
+
+    const size_type heap_end_index = m_end - StackBufferSize;
+    if (m_begin_heap + heap_end_index == m_heap_capacity_end ||
+        m_heap_capacity_end == nullptr)
+      expand();
+
+    std::construct_at(m_begin_heap + heap_end_index,
+                      std::move_if_noexcept(value));
+    ++m_end;
+  }
+
+  template <class... Args> constexpr T &emplace_back(Args &&...args) {
+    if (m_end < StackBufferSize) {
+      std::construct_at(std::launder(reinterpret_cast<T *>(
+                            &m_stack_buffer[m_end * value_size])),
+                        std::forward<Args>(args)...);
+      ++m_end;
+      return back();
+    }
+
+    const size_type heap_end_index = m_end - StackBufferSize;
+    if (m_begin_heap + heap_end_index == m_heap_capacity_end ||
+        m_heap_capacity_end == nullptr)
+      expand();
+
+    std::construct_at(m_begin_heap + heap_end_index,
+                      std::forward<Args>(args)...);
+    ++m_end;
+    return back();
+  }
+
+  constexpr void pop_back() {
+    --m_end;
+    if (m_end <= StackBufferSize - 1) {
+      std::destroy_at(std::launder(
+          reinterpret_cast<T *>(&m_stack_buffer[m_end * value_size])));
+      return;
+    }
+
+    const size_type heap_back_index = m_end - StackBufferSize;
+    std::destroy_at(m_begin_heap + heap_back_index);
+  }
+
   constexpr void resize(size_type count);
+
+  constexpr void debug_print() {
+    std::cout << "Size: " << size() << std::endl;
+    std::cout << "Capacity: " << capacity() << std::endl;
+    if (m_end == 0)
+      return;
+
+    std::cout << "Stack: ";
+
+    const size_type end_stack = std::min(m_end, StackBufferSize);
+    for (size_type i{}; i < end_stack; ++i)
+      std::cout << *std::launder(
+                       reinterpret_cast<T *>(&m_stack_buffer[i * value_size]))
+                << " ";
+
+    std::cout << std::endl;
+    if (m_end <= StackBufferSize)
+      return;
+
+    const size_type heap_end_index = m_end - StackBufferSize;
+    std::cout << "Heap: ";
+    for (size_type i{}; i < heap_end_index; ++i)
+      std::cout << m_begin_heap[i] << " ";
+
+    std::cout << std::endl;
+  }
   /* Modifiers */
 };
 
