@@ -39,7 +39,8 @@ class StackVector {
     const size_type num_on_stack = std::min(m_end, StackBufferSize);
 
     for (size_type i{}; i < num_on_stack; ++i)
-      std::destroy_at(&m_stack_buffer[i]);
+      std::destroy_at(
+          std::launder(reinterpret_cast<T *>(&m_stack_buffer[i * value_size])));
   }
 
   constexpr void construct_stack_move(size_type count, std::byte *other_stack) {
@@ -188,41 +189,41 @@ public:
   /* Special Member Functions */
 
   /* Element Access */
-  constexpr T &at(size_type pos) {
+  [[nodiscard]] constexpr T &at(size_type pos) {
     if (pos > m_end)
       throw std::runtime_error("element access beyond bounds in stackvector");
 
     return *this[pos];
   }
 
-  constexpr const T &at(size_type pos) const {
+  [[nodiscard]] constexpr const T &at(size_type pos) const {
     if (pos > m_end)
       throw std::runtime_error("element access beyond bounds in stackvector");
 
     return *this[pos];
   }
 
-  constexpr T &operator[](size_type pos) {
+  [[nodiscard]] constexpr T &operator[](size_type pos) {
     return pos < StackBufferSize ? *std::launder(reinterpret_cast<T *>(
                                        &m_stack_buffer[pos * value_size]))
                                  : m_begin_heap[pos - StackBufferSize];
   }
 
-  constexpr const T &operator[](size_type pos) const {
+  [[nodiscard]] constexpr const T &operator[](size_type pos) const {
     return pos < StackBufferSize ? *std::launder(reinterpret_cast<T *>(
                                        &m_stack_buffer[pos * value_size]))
                                  : m_begin_heap[pos - StackBufferSize];
   }
 
-  constexpr T &front() {
+  [[nodiscard]] constexpr T &front() {
     return *std::launder(reinterpret_cast<T *>(m_stack_buffer));
   }
 
-  constexpr const T &front() const {
+  [[nodiscard]] constexpr const T &front() const {
     return *std::launder(reinterpret_cast<T *>(m_stack_buffer));
   }
 
-  constexpr T &back() {
+  [[nodiscard]] constexpr T &back() {
     if (m_end <= StackBufferSize)
       return *std::launder(
           reinterpret_cast<T *>(&m_stack_buffer[(m_end - 1) * value_size]));
@@ -230,7 +231,7 @@ public:
     return m_begin_heap[(m_end - 1) - StackBufferSize];
   }
 
-  constexpr const T &back() const {
+  [[nodiscard]] constexpr const T &back() const {
     if (m_end <= StackBufferSize)
       return *std::launder(
           reinterpret_cast<T *>(&m_stack_buffer[(m_end - 1) * value_size]));
@@ -238,22 +239,24 @@ public:
     return m_begin_heap[(m_end - 1) - StackBufferSize];
   }
 
-  constexpr T *stack_data() noexcept {
+  [[nodiscard]] constexpr T *stack_data() noexcept {
     return std::launder(reinterpret_cast<T *>(m_stack_buffer));
   }
 
-  constexpr const T *stack_data() const noexcept {
+  [[nodiscard]] constexpr const T *stack_data() const noexcept {
     return std::launder(reinterpret_cast<const T *>(m_stack_buffer));
   }
 
-  constexpr T *heap_data() noexcept { return m_begin_heap; }
-  constexpr const T *heap_data() const noexcept { return m_begin_heap; }
+  [[nodiscard]] constexpr T *heap_data() noexcept { return m_begin_heap; }
+  [[nodiscard]] constexpr const T *heap_data() const noexcept {
+    return m_begin_heap;
+  }
   /* Element Access */
 
   /* Capacity */
-  constexpr bool is_empty() const noexcept { return m_end == 0; }
-  constexpr size_type size() const noexcept { return m_end; }
-  constexpr size_type capacity() const noexcept {
+  [[nodiscard]] constexpr bool is_empty() const noexcept { return m_end == 0; }
+  [[nodiscard]] constexpr size_type size() const noexcept { return m_end; }
+  [[nodiscard]] constexpr size_type capacity() const noexcept {
     if (m_end <= StackBufferSize)
       return StackBufferSize;
 
