@@ -1,6 +1,6 @@
 #include <cstddef>
 
-namespace edenlib {
+namespace eden {
 template <class T> class allocator {
   using value_type = T;
 
@@ -15,4 +15,4 @@ public:
   constexpr void deallocate(T *p, std::size_t n) { operator delete(p, n); }
 };
 
-} // namespace edenlib
+} // namespace eden

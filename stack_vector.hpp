@@ -1,9 +1,10 @@
+#pragma once
 #include "memory.hpp"
 #include <cstddef>
 #include <iostream>
 #include <memory>
 #include <utility>
-namespace edenlib {
+namespace eden {
 
 /* To Do:
  *
@@ -369,4 +370,4 @@ public:
   /* Modifiers */
 };
 
-} // namespace edenlib
+} // namespace eden
