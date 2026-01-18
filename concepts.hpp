@@ -107,6 +107,13 @@ template <class T>
 concept object_c = scalar_c<T> || array_c<T> || union_c<T> || class_c<T>;
 
 template <class T>
-concept moveable_c = true;
+concept swappable_c = true; // implement this when you do swap
+
+template <class T>
+concept moveable_c = object_c<T> && move_constructible_c<T> &&
+                     assignable_from_c<T &, T> && swappable_c<T>;
+
+template <class I>
+concept weakly_incrementable_c = moveable_c<T> && requires(T i) { type }
 
 } // namespace eden
