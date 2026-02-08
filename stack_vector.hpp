@@ -3,6 +3,7 @@
 #include <cstddef>
 #include <iostream>
 #include <memory>
+#include <type_traits>
 #include <utility>
 namespace eden {
 
@@ -21,11 +22,11 @@ class StackVector {
 
   [[no_unique_address]] Allocator m_alloc;
   size_type m_end{0};
-  std::byte m_stack_buffer[StackBufferSize * value_size];
+  alignas(T) std::byte m_stack_buffer[StackBufferSize * value_size];
   T *m_begin_heap{nullptr};
   T *m_heap_capacity_end{nullptr};
 
-  constexpr void destroy_heap() {
+  constexpr void destroy_heap() noexcept(std::is_nothrow_destructible_v<T>) {
     if (m_begin_heap) {
       for (size_type i{}; i < m_end - StackBufferSize; ++i)
         std::destroy_at(&m_begin_heap[i]);
@@ -36,47 +37,53 @@ class StackVector {
     m_heap_capacity_end = nullptr;
   }
 
-  constexpr void destroy_stack() {
+  constexpr void destroy_stack() noexcept(std::is_nothrow_destructible_v<T>) {
     const size_type num_on_stack = std::min(m_end, StackBufferSize);
 
     for (size_type i{}; i < num_on_stack; ++i)
       std::destroy_at(
-          std::launder(reinterpret_cast<T *>(&m_stack_buffer[i * value_size])));
+          std::launder(reinterpret_cast<T *>(m_stack_buffer + i * value_size)));
   }
 
-  constexpr void construct_stack_move(size_type count, std::byte *other_stack) {
+  constexpr void
+  construct_stack_move(size_type count, std::byte *other_stack) noexcept(
+      std::is_nothrow_move_constructible_v<T>) {
     const size_type num_on_stack = std::min(count, StackBufferSize);
     for (; m_end < num_on_stack; ++m_end)
-      std::construct_at(&m_stack_buffer[m_end * value_size],
-                        std::move_if_noexcept(other_stack[m_end * value_size]));
+      std::construct_at(
+          reinterpret_cast<T *>(m_stack_buffer + m_end * value_size),
+          std::move_if_noexcept(other_stack[m_end * value_size]));
   }
 
-  constexpr void construct_buffers_copy(size_type count, std::byte *other_stack,
-                                        T *other_heap) {
+  constexpr void construct_buffers_copy(
+      size_type count, std::byte *other_stack,
+      T *other_heap) noexcept(std::is_nothrow_copy_constructible_v<T>) {
     const size_type overflow =
         count > StackBufferSize ? count - StackBufferSize : 0;
     const size_type num_on_stack = std::min(count, StackBufferSize);
     for (; m_end < num_on_stack; ++m_end)
-      std::construct_at(&m_stack_buffer[m_end * value_size],
-                        other_stack[m_end * value_size]);
+      std::construct_at(
+          reinterpret_cast<T *>(m_stack_buffer + m_end * value_size),
+          other_stack[m_end * value_size]);
 
     if (overflow) {
       m_begin_heap = m_alloc.allocate(overflow);
       for (size_type i{}; i < overflow; ++i) {
-        std::construct_at(&m_begin_heap[i], other_heap[i]);
+        std::construct_at(m_begin_heap + i, other_heap[i]);
         ++m_end;
       }
       m_heap_capacity_end = m_begin_heap + overflow;
     }
   }
 
-  constexpr void construct_buffers(size_type count, const T &value) {
+  constexpr void construct_buffers(size_type count, const T &value) noexcept(
+      std::is_nothrow_copy_constructible_v<T>) {
     const size_type overflow =
         count > StackBufferSize ? count - StackBufferSize : 0;
     const size_type num_on_stack = std::min(count, StackBufferSize);
     for (; m_end < num_on_stack; ++m_end)
       std::construct_at(
-          reinterpret_cast<T *>(&m_stack_buffer[m_end * value_size]), value);
+          reinterpret_cast<T *>(m_stack_buffer + m_end * value_size), value);
 
     if (overflow) {
       m_begin_heap = m_alloc.allocate(overflow);
@@ -88,7 +95,8 @@ class StackVector {
     }
   }
 
-  constexpr void construct_buffers(size_type count) {
+  constexpr void construct_buffers(size_type count) noexcept(
+      std::is_nothrow_constructible_v<T>) {
     const size_type overflow =
         count > StackBufferSize ? count - StackBufferSize : 0;
     const size_type num_on_stack = std::min(count, StackBufferSize);
@@ -105,8 +113,8 @@ class StackVector {
     }
   }
 
-  constexpr void expand() {
-
+  constexpr void expand() noexcept(std::is_nothrow_move_constructible_v<T> &&
+                                   noexcept(Allocator::allocate)) {
     const size_type old_size =
         m_begin_heap ? m_heap_capacity_end - m_begin_heap : 1;
 
