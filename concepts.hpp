@@ -24,16 +24,10 @@ template <class T>
 concept nothrow_copy_constructible_c = noexcept(T::T());
 
 template <class From, class To>
-concept convertible_c = requires(From a) {
-  [] -> To { return std::forward<From>(a); };
-} && requires { static_cast<To>(declval<From>()); };
+concept convertible_c = requires { static_cast<To>(declval<From>()); };
 
 template <class From, class To>
-concept nothrow_convertible_c = requires(From a) {
-  {
-    [] -> To { return std::forward<From>(a); }
-  } noexcept;
-} && requires {
+concept nothrow_convertible_c = requires {
   { static_cast<To>(declval<From>()) } noexcept;
 };
 
@@ -89,11 +83,14 @@ template <class T>
 concept fundamental_c = !class_c<T> && !union_c<T> && !enum_c<T>;
 
 template <class T>
-concept array_c = requires(T &a) { [](auto(&)[]) {}(a); } ||
-                  requires(T &a) { []<std::size_t N>(auto(&)[N]) {}(a); };
+concept array_c = requires(T &a) { []<std::size_t N>(auto(&)[N]) {}(a); } ||
+                  requires(T &a) { [](auto(&)[]) {}(a); };
 
 template <class T>
 concept pointer_c = fundamental_c<T> && !array_c<T> && requires(T a) { *a; };
+
+template <class T>
+concept void_c = same_c<void, T>;
 
 template <class T>
 concept member_pointer_c = requires(T a) {
