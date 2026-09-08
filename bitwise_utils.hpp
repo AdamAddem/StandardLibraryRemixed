@@ -20,7 +20,7 @@ bool are_bitwise_equal(T const* first, T const* second) {
 // first and second may not overlap
 template <class T>
 [[nodiscard]] constexpr
-bool are_bitwise_equal_restrict(T const* eden_restrict first, T const* eden_restrict second) {
+bool are_bitwise_equal_restrict(T const* edenRestrict first, T const* edenRestrict second) {
   auto const p1 =     (byte_t const*)  first;
   auto const p1_end = (byte_t const*) (first + 1);
   auto const p2 =     (byte_t const*)  second;

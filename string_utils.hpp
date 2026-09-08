@@ -60,7 +60,7 @@ static constexpr const char(&append_number_to_literal)[str_size+22] = append_num
 // assumes src and dest are pointing to different buffers
 // assumes neither ptr is null
 [[nodiscard]] constexpr char*
-stpcpy_restrict(char* eden_restrict dest, const char* eden_restrict src) noexcept {
+stpcpy_restrict(char* edenRestrict dest, const char* edenRestrict src) noexcept {
   assert(dest); assert(src);
   while (true) {
     char const c = *src;
@@ -88,7 +88,7 @@ stpcpy(char* dest, char const* src) noexcept {
 }
 
 [[nodiscard]] constexpr bool
-streq_restrict(const char* eden_restrict first, const char* eden_restrict second, sz_t len) noexcept {
+streq_restrict(const char* edenRestrict first, const char* edenRestrict second, sz_t len) noexcept {
   assert(first); assert(second);
   auto i{0uz};
   while (i not_eq len) {
@@ -100,7 +100,7 @@ streq_restrict(const char* eden_restrict first, const char* eden_restrict second
 }
 
 [[nodiscard]] constexpr bool
-streq_restrict(const char* eden_restrict first, const char* eden_restrict second) noexcept {
+streq_restrict(const char* edenRestrict first, const char* edenRestrict second) noexcept {
   assert(first); assert(second);
 
   auto i{0uz};
