@@ -56,28 +56,39 @@ struct BasicAllocator {
   static constexpr bool supports_allocate_raw = true;
   static constexpr bool supports_reallocate = false;
 
-  static constexpr auto TAlign = align_t{alignof(T)};
 
   edenAlwaysInline [[nodiscard]] static T*
-  allocate(sz_t count, align_t alignment = TAlign) noexcept { 
-    assert( alignment >= TAlign );
+  allocate(sz_t count) noexcept {
+    return std::start_lifetime_as_array<T>( (T*) ::operator new[](count * sizeof(T), align_t{alignof(T)}), count );
+  }
+
+  edenAlwaysInline [[nodiscard]] static T*
+  allocate(sz_t count, align_t alignment) noexcept {
     return std::start_lifetime_as_array<T>( (T*) ::operator new[](count * sizeof(T), alignment), count );
   }
 
   edenAlwaysInline [[nodiscard]] static byte_t*
   allocate_raw(sz_t byte_count, align_t alignment) noexcept
-  { return std::start_lifetime_as_array<byte_t>( (byte_t*) ::operator new[](byte_count, alignment), byte_count); }
+  { return std::start_lifetime_as_array<byte_t>( ::operator new[](byte_count, alignment), byte_count); }
 
   edenAlwaysInline static void
-  deallocate(T* allocated, align_t allocated_alignment = TAlign) noexcept {
-    assert( allocated_alignment >= TAlign );
+  deallocate(T* allocated) noexcept {
+    ::operator delete[](allocated, align_t{alignof(T)});
+  }
+
+  edenAlwaysInline static void
+  deallocate(T* allocated, align_t allocated_alignment) noexcept {
     ::operator delete[](allocated, allocated_alignment);
   }
 
   edenAlwaysInline static void
-  deallocate(T* allocated, sz_t allocated_count, align_t allocated_alignment = TAlign) noexcept { 
-    assert( allocated_alignment >= TAlign );
-    ::operator delete[](allocated, allocated_count * sizeof(T), allocated_alignment); 
+  deallocate(T* allocated, sz_t allocated_count) noexcept {
+    ::operator delete[](allocated, allocated_count * sizeof(T));
+  }
+
+  edenAlwaysInline static void
+  deallocate(T* allocated, sz_t allocated_count, align_t allocated_alignment) noexcept {
+    ::operator delete[](allocated, allocated_count * sizeof(T), allocated_alignment);
   }
 
   edenAlwaysInline static void

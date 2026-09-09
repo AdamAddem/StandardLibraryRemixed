@@ -225,11 +225,12 @@ public:
     using value_type        = std::remove_cv_t<T>;
     using element_type      = value_type;
 
-    const_iterator() : m_ptr(nullptr) {}
-    explicit const_iterator(T* ptr) : m_ptr(ptr) {}
+    constexpr const_iterator() : m_ptr(nullptr) {}
+    constexpr explicit const_iterator(T* ptr) : m_ptr(ptr) {}
+    constexpr const_iterator(const_iterator const&) noexcept = default;
 
-    constexpr const_iterator&
-    operator=(const_iterator other) noexcept {
+    constexpr const_iterator& operator=(const_iterator&) noexcept = default;
+    constexpr const_iterator& operator=(const_iterator other) noexcept {
       m_ptr = other.m_ptr;
       return *this;
     }
@@ -303,9 +304,10 @@ public:
 
     iterator() : m_ptr(nullptr) {}
     explicit iterator(T* ptr) : m_ptr(ptr) {}
+    constexpr iterator(iterator const&) noexcept = default;
 
-    constexpr iterator&
-    operator=(iterator other) noexcept {
+    constexpr iterator& operator=(iterator&) noexcept = default;
+    constexpr iterator& operator=(iterator other) noexcept {
       m_ptr = other.m_ptr;
       return *this;
     }
